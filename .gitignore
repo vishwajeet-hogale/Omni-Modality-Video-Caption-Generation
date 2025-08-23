@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 env/
 *.env
+video-commentary-ai-venv
 
 # OS
 .DS_Store

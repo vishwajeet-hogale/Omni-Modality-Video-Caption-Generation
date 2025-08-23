@@ -11,7 +11,7 @@ from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoToken
 
 # Directories
 VIDEO_DIR = "videos"
-FRAME_DIR = "frames_dup"
+FRAME_DIR = "frames"
 MFCC_DIR = "mfccs"
 CAPTION_DIR = "captions"
 TEMP_DIR = "temp"

@@ -5,3 +5,8 @@ pillow
 accelerate
 scipy
 tqdm
+hydra-core
+lightning
+torchvision
+timm
+librosa
