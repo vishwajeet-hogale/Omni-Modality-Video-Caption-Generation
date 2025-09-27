@@ -13,21 +13,22 @@ from hydra import initialize, compose
 def objective(trial):
     # Suggest a learning rate
     lr = trial.suggest_loguniform("lr", 1e-5, 1e-2)
-
+    audio_encoder = trial.suggest_categorical('audio_encoder',["cnn2d", "transformer_cls", "conv1d", "mean_std"])
     # Load the base config using Hydra
     with initialize(config_path="configs"):
         cfg = compose(config_name="default")
 
     # Override the learning rate and training epochs
     cfg.trainer.lr = lr
-    cfg.trainer.epochs = 40
+    cfg.audio_encoder_cfg.encoder = audio_encoder
+    cfg.trainer.epochs = 20
     cfg.trainer.exp_name = f"optuna_trial_{trial.number}"
     cfg.trainer.output_dir = "./optuna_checkpoints"
 
     # Optional: Clear MPS cache
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
-
+    torch.cuda.empty_cache()
     # DataModule
     datamodule = VideoDataModule(cfg)
     datamodule.setup(stage="fit")
@@ -67,7 +68,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study(direction="maximize", study_name="lr_tuning")
-    study.optimize(objective, n_trials=12)
+    study.optimize(objective, n_trials=20)
 
     print("Best trial:")
     trial = study.best_trial

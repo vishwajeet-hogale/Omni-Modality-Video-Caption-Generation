@@ -40,7 +40,7 @@ trainer:
   batch_size: 32
   lr: 1e-4
   device: cuda
-  epochs: 300
+  epochs: 1
   output_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints
   max_seq_length: 128
   mlm_probability: 0.15
@@ -72,4 +72,3 @@ inference:
   model_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints/best_model.pth
   video_image_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
   inf_save_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
-  
