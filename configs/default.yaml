@@ -35,13 +35,13 @@ decoder_cfg:
 
 trainer:
   precision: 32
-  accelerator: cuda
+  accelerator: auto
   devices: 1
-  batch_size: 32
+  batch_size: 16
   lr: 1e-4
-  device: cuda
-  epochs: 1
-  output_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints
+  device: mps
+  epochs: 8
+  output_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints
   max_seq_length: 128
   mlm_probability: 0.15
   save_steps: 500
@@ -50,10 +50,10 @@ trainer:
   exp_name: SwinBartAudio
 
 data:
-  captions_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/captions_csv
-  frames_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames
-  audio_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/mfccs
-  batch_size: 32
+  captions_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/captions_csv
+  frames_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/frames
+  audio_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/mfccs
+  batch_size: 16
   num_workers: 0
   pin_memory: false
   use_csv: True
@@ -65,10 +65,10 @@ inference:
   max_length: 128
   top_k: 10
   top_p: 0.95
-  temperature: 1.0
+  temperature: 0.2
   image_size: 224
   num_beams: 2
-  image_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
-  model_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints/best_model.pth
-  video_image_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
-  inf_save_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
+  image_path: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
+  model_path: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints/best_model.pth
+  video_image_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/frames/Nasogastric tube insertion_clip_0.0s_to_175.0s
+  inf_save_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s

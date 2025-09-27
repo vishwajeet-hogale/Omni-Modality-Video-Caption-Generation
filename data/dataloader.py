@@ -18,7 +18,7 @@ def build_dataloader(cfg, split="train"):
     dataloader = DataLoader(
         dataset,
         batch_size=cfg.trainer.batch_size,
-        shuffle=(split == "train"),
+        shuffle=False,
         num_workers=cfg.training.num_workers if "num_workers" in cfg.training else 2,
         # pin_memory=True
     )
