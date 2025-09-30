@@ -21,6 +21,27 @@ class TrainerModule(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]
+        
+        # Log batch information
+        batch_size = images.shape[0]
+        image_shape = images.shape
+        audio_shape = audio.shape
+        num_captions = len(captions)
+        
+        # Log batch metrics
+        self.log("train/batch_size", batch_size, on_step=True, logger=True)
+        self.log("train/num_captions", num_captions, on_step=True, logger=True)
+        
+        # Print batch info for first few batches
+        if batch_idx < 3:
+            # Calculate memory usage
+            image_memory = images.numel() * images.element_size() / (1024**2)  # MB
+            audio_memory = audio.numel() * audio.element_size() / (1024**2)  # MB
+            total_memory = image_memory + audio_memory
+            
+            print(f"Train Batch {batch_idx}: size={batch_size}, images={image_shape}, audio={audio_shape}, captions={num_captions}")
+            print(f"Memory: images={image_memory:.2f}MB, audio={audio_memory:.2f}MB, total={total_memory:.2f}MB")
+        
         outputs = self(images, captions, audio)
         loss = outputs.loss
 
@@ -46,6 +67,27 @@ class TrainerModule(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]
+        
+        # Log batch information
+        batch_size = images.shape[0]
+        image_shape = images.shape
+        audio_shape = audio.shape
+        num_captions = len(captions)
+        
+        # Log batch metrics
+        self.log("val/batch_size", batch_size, on_step=True, logger=True)
+        self.log("val/num_captions", num_captions, on_step=True, logger=True)
+        
+        # Print batch info for first few batches
+        if batch_idx < 3:
+            # Calculate memory usage
+            image_memory = images.numel() * images.element_size() / (1024**2)  # MB
+            audio_memory = audio.numel() * audio.element_size() / (1024**2)  # MB
+            total_memory = image_memory + audio_memory
+            
+            print(f"Val Batch {batch_idx}: size={batch_size}, images={image_shape}, audio={audio_shape}, captions={num_captions}")
+            print(f"Memory: images={image_memory:.2f}MB, audio={audio_memory:.2f}MB, total={total_memory:.2f}MB")
+        
         outputs = self(images, captions, audio)
         loss = outputs.loss
 
@@ -74,6 +116,40 @@ class TrainerModule(L.LightningModule):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.cfg.trainer.lr)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
+
+    def on_train_epoch_start(self):
+        """Log dataloader information at the start of each training epoch."""
+        train_loader = self.trainer.train_dataloader
+        val_loader = self.trainer.val_dataloaders[0] if self.trainer.val_dataloaders else None
+        
+        print(f"\n📊 Epoch {self.current_epoch} DataLoader Info:")
+        print(f"  Train batches: {len(train_loader)}")
+        if val_loader:
+            print(f"  Val batches: {len(val_loader)}")
+        
+        # Log total samples
+        train_samples = len(train_loader.dataset)
+        val_samples = len(val_loader.dataset) if val_loader else 0
+        print(f"  Train samples: {train_samples}")
+        print(f"  Val samples: {val_samples}")
+        
+        # Log batch size
+        batch_size = train_loader.batch_size
+        print(f"  Batch size: {batch_size}")
+        print(f"  Expected train steps: {len(train_loader)}")
+        if val_loader:
+            print(f"  Expected val steps: {len(val_loader)}")
+
+    def on_train_epoch_end(self):
+        """Log epoch-level statistics."""
+        # Get epoch metrics
+        train_loss = self.trainer.callback_metrics.get("train/loss_epoch", 0)
+        lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+        
+        print(f"\n📈 Epoch {self.current_epoch} Summary:")
+        print(f"  Train Loss: {train_loss:.4f}")
+        print(f"  Learning Rate: {lr:.6f}")
+        print(f"  Global Step: {self.global_step}")
 
     def on_validation_epoch_end(self):
         val_loss = self.trainer.callback_metrics.get("val/loss_epoch")

@@ -253,6 +253,8 @@ def predict_and_annotate_images(cfg, model, transform, device):
     print(f"ROUGE-L F1 (avg): {metrics['rougeL_F1']:.4f}")
     print(f"Saved predictions to: {pred_csv_path}")
     print(f"Saved metrics to: {metrics_path}\n")
+    
+    return metrics
 
 @hydra.main(config_path="configs", config_name="default")
 def inference(cfg: DictConfig):

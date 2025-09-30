@@ -8,12 +8,14 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 class VideoCaptionDataset(Dataset):
-    def __init__(self, captions_dir, frames_dir, transform=None):
+    def __init__(self, captions_dir, frames_dir, transform=None, split=None, video_names=None):
         """
         Args:
             captions_dir (str): Path to the directory with JSON caption files.
             frames_dir (str): Path to the directory with frame subdirectories.
             transform (callable, optional): Optional transform to be applied on an image.
+            split (str): Split name for logging purposes.
+            video_names (list): List of video names to include in this dataset.
         """
         self.captions_dir = captions_dir
         self.frames_dir = frames_dir
@@ -21,12 +23,21 @@ class VideoCaptionDataset(Dataset):
             transforms.Resize((224, 224)),
             transforms.ToTensor()
         ])
+        self.split = split
+        self.video_names = video_names
 
         self.data = [] 
 
-        for json_file in os.listdir(captions_dir):
-            if not json_file.endswith(".json"):
-                continue
+        # Get all available video files
+        all_video_files = [f for f in os.listdir(captions_dir) if f.endswith(".json")]
+        
+        # If video_names is specified, filter to only those videos
+        if video_names is not None:
+            video_files = [f for f in all_video_files if os.path.splitext(f)[0] in video_names]
+        else:
+            video_files = all_video_files
+
+        for json_file in video_files:
             video_name = os.path.splitext(json_file)[0]
             json_path = os.path.join(captions_dir, json_file)
 
@@ -51,7 +62,7 @@ class VideoCaptionDataset(Dataset):
 
 
 class VideoCaptionDatasetCSV(Dataset):
-    def __init__(self, captions_dir, frames_dir, audio_dir, transform=None):
+    def __init__(self, captions_dir, frames_dir, audio_dir, transform=None, split=None, video_names=None):
         self.captions_dir = captions_dir
         self.frames_dir = frames_dir
         self.audio_dir = audio_dir
@@ -60,12 +71,21 @@ class VideoCaptionDatasetCSV(Dataset):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+        self.split = split
+        self.video_names = video_names
 
         self.data = [] 
 
-        for csv_file in os.listdir(captions_dir):
-            if not csv_file.endswith(".csv"):
-                continue
+        # Get all available video files
+        all_video_files = [f for f in os.listdir(captions_dir) if f.endswith(".csv")]
+        
+        # If video_names is specified, filter to only those videos
+        if video_names is not None:
+            video_files = [f for f in all_video_files if os.path.splitext(f)[0] in video_names]
+        else:
+            video_files = all_video_files
+
+        for csv_file in video_files:
             video_name = os.path.splitext(csv_file)[0]
             csv_path = os.path.join(captions_dir, csv_file)
             df = pd.read_csv(csv_path)
