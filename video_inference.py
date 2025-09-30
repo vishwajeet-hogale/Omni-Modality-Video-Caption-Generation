@@ -263,7 +263,7 @@ def inference(cfg: DictConfig):
 
     # Initialize and load model
     model = SwinBart(cfg).to(device)
-    model.load_state_dict(torch.load(cfg.inference.model_path, map_location=device))
+    model.load_state_dict(torch.load(cfg.inference.model_path, map_location=device), strict=False)
     model.eval()
 
     # Image preprocessing

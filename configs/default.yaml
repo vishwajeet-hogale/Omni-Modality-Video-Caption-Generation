@@ -37,10 +37,10 @@ trainer:
   precision: 32
   accelerator: auto
   devices: 1
-  batch_size: 16
-  lr: 1e-4
+  batch_size: 8
+  lr: 10e-2
   device: mps
-  epochs: 8
+  epochs: 16
   output_dir: /Users/rohitkulkarni/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints
   max_seq_length: 128
   mlm_probability: 0.15
@@ -49,11 +49,17 @@ trainer:
   log_every_n_steps: 4
   exp_name: SwinBartAudio
 
+# Temporal attention configuration
+use_temporal_attention: true # Set to true to enable temporal attention
+temporal_attention_heads: 8
+temporal_attention_dropout: 0.1
+temporal_memory_length: 10
+
 data:
   captions_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/captions_csv
   frames_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames
   audio_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation//mfccs
-  batch_size: 16
+  batch_size: 8
   num_workers: 0
   pin_memory: false
   use_csv: True
