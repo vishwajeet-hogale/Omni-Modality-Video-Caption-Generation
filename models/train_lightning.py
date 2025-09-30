@@ -62,7 +62,8 @@ class TrainerModule(L.LightningModule):
                 mfccs = mfccs.unsqueeze(1)
             mfcc_grid = torchvision.utils.make_grid(mfccs, normalize=True, scale_each=True)
             self.logger.experiment.add_image("train/audio_mfcc", mfcc_grid, self.current_epoch)
-
+        if getattr(self.model, 'use_temporal_attention', False):
+             self.model.reset_temporal_memory()
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -109,7 +110,8 @@ class TrainerModule(L.LightningModule):
 
             # Optional: log raw audio (if you have it and want to hear it)
             # self.logger.experiment.add_audio("val/audio_waveform", raw_audio[0], self.current_epoch, sample_rate=16000)
-
+        if getattr(self.model, 'use_temporal_attention', False):
+             self.model.reset_temporal_memory()
         return loss
 
     def configure_optimizers(self):
@@ -120,7 +122,7 @@ class TrainerModule(L.LightningModule):
     def on_train_epoch_start(self):
         """Log dataloader information at the start of each training epoch."""
         train_loader = self.trainer.train_dataloader
-        val_loader = self.trainer.val_dataloaders[0] if self.trainer.val_dataloaders else None
+        val_loader = self.trainer.val_dataloaders if self.trainer.val_dataloaders else None
         
         print(f"\n📊 Epoch {self.current_epoch} DataLoader Info:")
         print(f"  Train batches: {len(train_loader)}")
