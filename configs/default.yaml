@@ -4,31 +4,31 @@ defaults:
 text_encoder_cfg:
   encoder: bert-base-uncased
   lora: true
-  input_dim: 768     # BERT's hidden size
+  input_dim: 768 # BERT's hidden size
   output_dim: 768
   freeze: false
 
 vision_encoder_cfg:
   encoder: swin_base_patch4_window7_224
   lora: false
-  input_dim: 768     # ViT's patch embedding size
+  input_dim: 768 # ViT's patch embedding size
   output_dim: 1000
   freeze: false
 audio_encoder_cfg:
   encoder: transformer_cls
   lora: false
-  input_dim: 768     # Whisper's hidden size
+  input_dim: 768 # Whisper's hidden size
   n_mfcc: 13
   freeze: false
 fusion_cfg:
   fusion_type: concat
-  input_dim: 768      # Optional: only used if projecting embeddings after concat
+  input_dim: 768 # Optional: only used if projecting embeddings after concat
   output_dim: 768
 
 decoder_cfg:
   decoder: facebook/bart-base
   lora: true
-  input_dim: 1536      # Match fusion output_dim
+  input_dim: 1536 # Match fusion output_dim
   hidden_dim: 768
   output_dim: 768
   freeze: false
@@ -41,7 +41,7 @@ trainer:
   lr: 1e-4
   device: mps
   epochs: 8
-  output_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints
+  output_dir: /Users/rohitkulkarni/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints
   max_seq_length: 128
   mlm_probability: 0.15
   save_steps: 500
@@ -50,25 +50,32 @@ trainer:
   exp_name: SwinBartAudio
 
 data:
-  captions_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/captions_csv
-  frames_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/frames
-  audio_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/mfccs
+  captions_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/captions_csv
+  frames_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames
+  audio_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation//mfccs
   batch_size: 16
   num_workers: 0
   pin_memory: false
   use_csv: True
+  # Video split configuration to prevent temporal leakage
+  train_ratio: 0.7 # 70% of videos for training
+  val_ratio: 0.15 # 15% of videos for validation
+  test_ratio: 0.15 # 15% of videos for testing
+  random_seed: 42 # For reproducible splits
 
 inference:
   batch_size: 1
   num_workers: 0
   pin_memory: false
-  max_length: 128
-  top_k: 10
+  max_length: 20
+  min_length: 5
+  top_k: 5
   top_p: 0.95
-  temperature: 0.2
+  temperature: 0.6
   image_size: 224
-  num_beams: 2
-  image_path: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
-  model_path: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints/best_model.pth
-  video_image_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/frames/Nasogastric tube insertion_clip_0.0s_to_175.0s
-  inf_save_dir: /Users/vishwajeethogale/Desktop/Research/Omni-Modality-Video-Caption-Generation/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
+  num_beams: 4
+  image_path: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
+  model_path: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints/best_model.pth
+  video_image_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames/Nasogastric tube insertion_clip_0.0s_to_175.0s
+  checkpoint_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints
+  inf_save_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
