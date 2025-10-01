@@ -29,60 +29,50 @@ class SwinBart(nn.Module):
         self.use_temporal_attention = getattr(cfg, 'use_temporal_attention', False)
         if self.use_temporal_attention:
             self.temporal_attention = TemporalAttention(
-                hidden_dim=cfg.decoder_cfg.hidden_dim * 2,
+                in_dim=cfg.decoder_cfg.hidden_dim,
+                hidden_dim=cfg.decoder_cfg.hidden_dim ,
                 num_heads=getattr(cfg, 'temporal_attention_heads', 8),
                 dropout=getattr(cfg, 'temporal_attention_dropout', 0.1)
             )
             self.temporal_memory = TemporalMemory(
-                max_length=getattr(cfg, 'temporal_memory_length', 10)
+                max_len=getattr(cfg, 'temporal_memory_length', 10)
             )
-
+        self.projection_outputs_to_temp = nn.Linear(50265, cfg.decoder_cfg.hidden_dim)
     def forward(self, images, captions, audio):
-        image_features = self.encoder(images)
-        audio_features = self.audio_encoder(audio)
-        
-        # Apply temporal attention if enabled
-        if self.use_temporal_attention and self.training:
-            batch_size = image_features.shape[0]
-            temporal_features = []
-            
-            for i in range(batch_size):
-                current_image = image_features[i:i+1]
-                current_audio = audio_features[i:i+1]
-                
-                # Get previous features from memory
-                previous_features = self.temporal_memory.get_previous()
-                print(f"🔍 TEMPORAL DEBUG:")
-                print(f"  📊 Previous features: {len(previous_features)}")
-                concat_feat = torch.cat((current_image, current_audio), dim=1)  # 1536 dims
-                normalized_feat = nn.functional.normalize(concat_feat, dim=1)
-                print(f"  📊 Current features: {normalized_feat.shape}")
+        B, device = images.size(0), images.device
 
-                # Apply temporal attention to COMBINED features
-                if previous_features:
-                    print(f"  🎯 APPLYING TEMPORAL ATTENTION")
-                    attended_feat = self.temporal_attention(
-                        current_features=normalized_feat,  # 1536 dims
-                        previous_features=previous_features  # 1536 dims
-                    )
-                    print(f"  ✅ Attended features: {attended_feat.shape}")
-                else:
-                    print(f"  ⚠️  NO PREVIOUS FEATURES - First frame")
-                    attended_feat = normalized_feat
+        # 1) encode
+        img_feats = self.encoder(images)          # [B, I]
+        aud_feats = self.audio_encoder(audio)     # [B, A]
 
-                temporal_features.append(attended_feat)
-                print(attended_feat.shape)
+        # 2) fuse + normalize
+        fused = torch.cat([img_feats, aud_feats], dim=1)   # [B, 1536]
+        fused = nn.functional.normalize(fused, dim=1)
 
-                # Add to memory for next frame
-                self.temporal_memory.add(attended_feat)  # 1536 dims
-            
-            normalized_features = torch.cat(temporal_features, dim=0)
-        else:
-            # Original behavior when temporal attention is disabled
-            concat_features = torch.cat((image_features, audio_features), dim=1)
-            normalized_features = nn.functional.normalize(concat_features, dim=1)
-        
-        outputs = self.decoder.forward(normalized_features, captions)
+        # 3) optional temporal attention
+        if self.use_temporal_attention:
+            memory, mask = self.temporal_memory.get_previous(B, device)
+
+            if memory is None:
+                memory = torch.zeros(B, 1, self.temporal_attention.hidden_dim, device=device)  # [B,1,H]
+                mask = torch.ones(B, 1, dtype=torch.long, device=device)  # [B,1]
+
+            if not hasattr(self, "input_proj"):
+                self.input_proj = nn.Linear(fused.size(1), memory.size(-1)).to(device)
+
+            attn_query = self.input_proj(fused)  # [B,H]
+            _ = self.temporal_attention(query=attn_query, memory=memory, mask=mask)
+
+        # 4) decode this frame (decoder expects [B,1536])
+        outputs = self.decoder.forward(fused, captions)
+        logits = outputs.logits
+
+        # 5) update memory only if enabled
+        if self.use_temporal_attention:
+            cls_logits = logits[:, 0, :]
+            cls_proj   = self.projection_outputs_to_temp(cls_logits)
+            self.temporal_memory.add(cls_proj)
+
         return outputs
     def generate(self, images, audio, max_length=128, num_beams=4):
         image_features = self.encoder(images)
