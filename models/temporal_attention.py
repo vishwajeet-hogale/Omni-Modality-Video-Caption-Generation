@@ -130,12 +130,24 @@ class EnhancedTemporalMemory:
         if not self.mm_buffer:
             return None, None, None
             
-        # Handle batch size mismatches
-        mm_memory = torch.stack([buf[:batch_size] for buf in self.mm_buffer], dim=1)
-        text_memory = torch.stack([buf[:batch_size] for buf in self.text_buffer], dim=1)
+        # Handle batch size mismatches by taking only the needed samples
+        mm_truncated = []
+        text_truncated = []
+        
+        for mm_buf, text_buf in zip(self.mm_buffer, self.text_buffer):
+            if mm_buf.size(0) >= batch_size:
+                mm_truncated.append(mm_buf[:batch_size])
+                text_truncated.append(text_buf[:batch_size])
+            else:
+                # If stored batch is smaller than requested, skip this entry or return None
+                return None, None, None
+        
+        # Stack the truncated buffers
+        mm_memory = torch.stack(mm_truncated, dim=1)  # [B, Tm, multimodal_dim]  
+        text_memory = torch.stack(text_truncated, dim=1)  # [B, Tm, text_dim]
         
         # Create attention mask
-        seq_len = len(self.mm_buffer)
+        seq_len = len(mm_truncated)
         mask = torch.ones(batch_size, seq_len, device=device)
         
         return mm_memory, text_memory, mask
@@ -148,28 +160,69 @@ class EnhancedTemporalAttention(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
+        self.multimodal_dim = multimodal_dim
+        self.text_dim = text_dim
         
-        # Separate attention for multimodal and text
-        self.mm_attention = TemporalAttention(multimodal_dim, hidden_dim, num_heads, dropout)
-        self.text_attention = TemporalAttention(text_dim, hidden_dim, num_heads, dropout)
+        # Project inputs to consistent hidden dimension
+        self.mm_proj_in = nn.Linear(multimodal_dim, hidden_dim)
+        self.text_proj_in = nn.Linear(text_dim, hidden_dim)
         
-        # Fusion layer
+        # Separate attention for multimodal and text (both use hidden_dim)
+        self.mm_attention = TemporalAttention(hidden_dim, hidden_dim, num_heads, dropout)
+        self.text_attention = TemporalAttention(hidden_dim, hidden_dim, num_heads, dropout)
+        
+        # Fusion layer - output should match decoder input expectations (1536)
         self.fusion = nn.Sequential(
-            nn.Linear(multimodal_dim + 2 * hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim + 2 * hidden_dim, multimodal_dim),  # Output 1536 to match decoder input
+            nn.LayerNorm(multimodal_dim),
             nn.ReLU(),
             nn.Dropout(dropout)
         )
         
     def forward(self, current_mm, current_text, mm_memory, text_memory, mask):
+        # Project multimodal features to hidden dimension
+        current_mm_proj = self.mm_proj_in(current_mm)  # [B, hidden_dim]
+        
+        # Project memory from [B, Tm, multimodal_dim] to [B, Tm, hidden_dim]
+        mm_memory_proj = self.mm_proj_in(mm_memory.view(-1, self.multimodal_dim)).view(mm_memory.size(0), mm_memory.size(1), self.hidden_dim)
+        
         # Multimodal temporal attention
-        mm_context = self.mm_attention(current_mm, mm_memory, mask)
+        mm_context = self.mm_attention(current_mm_proj, mm_memory_proj, mask)
         
         # Text temporal attention (if text features available)
         text_context = torch.zeros_like(mm_context)
         if current_text is not None and text_memory is not None:
-            text_context = self.text_attention(current_text, text_memory, mask)
+            # Ensure batch size consistency between current batch and text memory
+            batch_size = current_mm.size(0)
+            text_mask = mask  # Start with the original mask
+            
+            # Ensure current_text also matches the batch size
+            if current_text.size(0) != batch_size:
+                current_text = current_text[:batch_size]
+            
+            if text_memory.size(0) != batch_size:
+                # Truncate or pad text_memory to match current batch size
+                if text_memory.size(0) > batch_size:
+                    text_memory = text_memory[:batch_size]
+                    # Also truncate the mask if needed
+                    if mask is not None and mask.size(0) > batch_size:
+                        text_mask = mask[:batch_size]
+                else:
+                    # Pad with zeros if needed
+                    pad_size = batch_size - text_memory.size(0)
+                    padding = torch.zeros(pad_size, text_memory.size(1), text_memory.size(2), 
+                                        device=text_memory.device, dtype=text_memory.dtype)
+                    text_memory = torch.cat([text_memory, padding], dim=0)
+                    
+                    # Also pad the mask if needed
+                    if mask is not None and mask.size(0) < batch_size:
+                        mask_pad = torch.zeros(pad_size, mask.size(1), device=mask.device, dtype=mask.dtype)
+                        text_mask = torch.cat([mask, mask_pad], dim=0)
+                    
+            current_text_proj = self.text_proj_in(current_text)
+            text_memory_proj = self.text_proj_in(text_memory.view(-1, self.text_dim)).view(text_memory.size(0), text_memory.size(1), self.hidden_dim)
+            text_context = self.text_attention(current_text_proj, text_memory_proj, text_mask)
         
         # Combine all features
-        combined = torch.cat([current_mm, mm_context, text_context], dim=-1)
+        combined = torch.cat([current_mm_proj, mm_context, text_context], dim=-1)
         return self.fusion(combined)

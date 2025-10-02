@@ -35,53 +35,60 @@ decoder_cfg:
 
 trainer:
   precision: 32
-  accelerator: auto
+  accelerator: cuda
   devices: 1
-  batch_size: 8
-  lr: 10e-2
-  device: mps
-  epochs: 16
-  output_dir: /Users/rohitkulkarni/Desktop/Research/Omni-Modality-Video-Caption-Generation/checkpoints
+  batch_size: 4
+  lr: 2e-4  # Much lower for stable text feedback training
+  device: cuda
+  epochs: 10
+  output_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints
   max_seq_length: 128
   mlm_probability: 0.15
   save_steps: 500
   logging_steps: 100
   log_every_n_steps: 4
   exp_name: SwinBartAudio
+  # Enhanced training settings for text feedback
+  weight_decay: 0
+  warmup_steps: 10000
+  lr_scheduler: constant
+  gradient_clip_val: 1.0
+  min_lr: 5e-6
 
 # Temporal attention configuration
 use_temporal_attention: true # Set to true to enable temporal attention
+use_text_feedback: true      # Set to true to enable text feedback for narrative continuity
 temporal_attention_heads: 8
 temporal_attention_dropout: 0.1
 temporal_memory_length: 10
 
 data:
-  captions_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/captions_csv
-  frames_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames
-  audio_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation//mfccs
-  batch_size: 8
+  captions_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/captions_csv
+  frames_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames
+  audio_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/mfccs
+  batch_size: 4
   num_workers: 0
   pin_memory: false
   use_csv: True
   # Video split configuration to prevent temporal leakage
-  train_ratio: 0.7 # 70% of videos for training
-  val_ratio: 0.15 # 15% of videos for validation
-  test_ratio: 0.15 # 15% of videos for testing
+  train_ratio: 1 # 70% of videos for training
+  val_ratio: 1 # 15% of videos for validation
+  test_ratio: 1 # 15% of videos for testing
   random_seed: 42 # For reproducible splits
 
 inference:
-  batch_size: 1
+  batch_size: 4
   num_workers: 0
   pin_memory: false
-  max_length: 20
+  max_length: 60
   min_length: 5
   top_k: 5
   top_p: 0.95
   temperature: 0.6
   image_size: 224
   num_beams: 4
-  image_path: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
-  model_path: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints/best_model.pth
-  video_image_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames/Nasogastric tube insertion_clip_0.0s_to_175.0s
-  checkpoint_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints
-  inf_save_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
+  image_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
+  model_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints/best_model.pth
+  video_image_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
+  checkpoint_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints
+  inf_save_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s

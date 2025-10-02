@@ -20,8 +20,8 @@ class TrainerModule(L.LightningModule):
         self.current_video_name = None
         self.last_batch_idx = -1
 
-    def forward(self, images, captions, audio, is_new_video=False):
-        return self.model(images, captions, audio, is_new_video=is_new_video)
+    def forward(self, images, captions, audio, is_new_video=False, previous_captions=None):
+        return self.model(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
 
     def training_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]
@@ -153,8 +153,8 @@ class TrainerModule(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.cfg.trainer.lr)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
+        return {"optimizer": optimizer}
 
     def on_train_epoch_start(self):
         """Log dataloader information at the start of each training epoch."""
