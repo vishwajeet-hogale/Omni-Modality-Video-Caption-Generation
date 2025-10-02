@@ -94,7 +94,7 @@ class VideoDataModule(pl.LightningDataModule):
             num_workers=d.num_workers,
             pin_memory=d.pin_memory,
             collate_fn=VideoCaptionDatasetCSV.collate_fn if self.cfg.data.use_csv else None,
-            shuffle=True,
+            shuffle=False,
         )
 
     def val_dataloader(self):
