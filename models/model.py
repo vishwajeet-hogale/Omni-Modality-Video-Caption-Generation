@@ -38,6 +38,7 @@ class SwinBart(nn.Module):
                 max_len=getattr(cfg, 'temporal_memory_length', 10)
             )
         self.projection_outputs_to_temp = nn.Linear(50265, cfg.decoder_cfg.hidden_dim)
+        self.projection = nn.Linear(2304, 1536)
     def forward(self, images, captions, audio):
         B, device = images.size(0), images.device
 
@@ -61,10 +62,12 @@ class SwinBart(nn.Module):
                 self.input_proj = nn.Linear(fused.size(1), memory.size(-1)).to(device)
 
             attn_query = self.input_proj(fused)  # [B,H]
-            _ = self.temporal_attention(query=attn_query, memory=memory, mask=mask)
+            attn_results = self.temporal_attention(query=attn_query, memory=memory, mask=mask)
 
         # 4) decode this frame (decoder expects [B,1536])
-        outputs = self.decoder.forward(fused, captions)
+        combined_prev_current = torch.concat([fused, attn_results], dim=1) if self.use_temporal_attention else fused
+        combined_prev_current = self.projection(combined_prev_current) if self.use_temporal_attention else combined_prev_current
+        outputs = self.decoder.forward(combined_prev_current, captions)
         logits = outputs.logits
 
         # 5) update memory only if enabled
