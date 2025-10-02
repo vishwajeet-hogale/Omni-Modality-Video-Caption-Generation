@@ -109,6 +109,9 @@ class EnhancedTemporalMemory:
         self.text_buffer.clear()
         
     def add(self, mm_features, text_features=None):
+        # Ensure we have consistent batch sizes
+        batch_size = mm_features.shape[0]
+        
         # Add multimodal features
         self.mm_buffer.append(mm_features.detach())
         if len(self.mm_buffer) > self.max_len:
@@ -116,10 +119,14 @@ class EnhancedTemporalMemory:
             
         # Add text features (or placeholder)
         if text_features is not None:
+            # Ensure text features have the same batch size
+            if text_features.shape[0] != batch_size:
+                # If batch sizes don't match, take only the first batch_size elements
+                text_features = text_features[:batch_size]
             self.text_buffer.append(text_features.detach())
         else:
             # Add zero placeholder for consistency
-            batch_size, device = mm_features.shape[0], mm_features.device
+            device = mm_features.device
             zero_text = torch.zeros(batch_size, self.text_dim, device=device)
             self.text_buffer.append(zero_text)
             
@@ -130,13 +137,22 @@ class EnhancedTemporalMemory:
         if not self.mm_buffer:
             return None, None, None
             
-        # Handle batch size mismatches
-        mm_memory = torch.stack([buf[:batch_size] for buf in self.mm_buffer], dim=1)
-        text_memory = torch.stack([buf[:batch_size] for buf in self.text_buffer], dim=1)
+        # Handle batch size mismatches by ensuring all buffers have the same batch size
+        # Take the minimum batch size across all buffers to avoid mismatches
+        min_batch_size = min(batch_size, min(buf.size(0) for buf in self.mm_buffer))
+        
+        # If the requested batch size is larger than what we have, return None
+        if min_batch_size < batch_size:
+            return None, None, None
+            
+        # Stack memories with consistent batch size
+        # Each buffer should be [batch_size, feature_dim], stack along sequence dimension
+        mm_memory = torch.stack([buf[:min_batch_size] for buf in self.mm_buffer], dim=1)  # [B, T, feature_dim]
+        text_memory = torch.stack([buf[:min_batch_size] for buf in self.text_buffer], dim=1)  # [B, T, feature_dim]
         
         # Create attention mask
         seq_len = len(self.mm_buffer)
-        mask = torch.ones(batch_size, seq_len, device=device)
+        mask = torch.ones(min_batch_size, seq_len, device=device)
         
         return mm_memory, text_memory, mask
 

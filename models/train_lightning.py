@@ -20,8 +20,8 @@ class TrainerModule(L.LightningModule):
         self.current_video_name = None
         self.last_batch_idx = -1
 
-    def forward(self, images, captions, audio, is_new_video=False):
-        return self.model(images, captions, audio, is_new_video=is_new_video)
+    def forward(self, images, captions, audio, is_new_video=False, previous_captions=None):
+        return self.model(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
 
     def training_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]

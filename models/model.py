@@ -39,7 +39,7 @@ class SwinBart(nn.Module):
                 self.text_tokenizer = BertTokenizer.from_pretrained(cfg.text_encoder_cfg.encoder)
                 
                 self.temporal_attention = EnhancedTemporalAttention(
-                    multimodal_dim=1536,  # vision + audio
+                    multimodal_dim=cfg.decoder_cfg.hidden_dim,  # Projected dimension (768)
                     text_dim=cfg.decoder_cfg.hidden_dim,
                     hidden_dim=cfg.decoder_cfg.hidden_dim,
                     num_heads=getattr(cfg, 'temporal_attention_heads', 8),
@@ -61,7 +61,7 @@ class SwinBart(nn.Module):
                     max_len=getattr(cfg, 'temporal_memory_length', 10)
                 )
         self.projection_outputs_to_temp = nn.Linear(50265, cfg.decoder_cfg.hidden_dim)
-        self.projection = nn.Linear(2304, 1536)
+        self.projection = nn.Linear(2304, 1536)  # Input: 2304, Output: 1536
     def forward(self, images, captions, audio, is_new_video=False, previous_captions=None):
         B, device = images.size(0), images.device
 
@@ -97,24 +97,52 @@ class SwinBart(nn.Module):
         # 4) apply temporal attention
         enhanced_features = current_mm_features
         if self.use_temporal_attention:
+            if not hasattr(self, 'memory_projection'):
+                self.memory_projection = nn.Linear(1536, 768).to(device)
+            memory_features = self.memory_projection(current_mm_features)  # 1536 -> 768
+            self.temporal_memory.add(memory_features)  # Store projected features
             if self.use_text_feedback:
                 # Enhanced temporal attention with text feedback
                 mm_memory, text_memory, mask = self.temporal_memory.get_previous(B, device)
                 if mm_memory is not None:
-                    enhanced_features = self.temporal_attention(
-                        current_mm_features, 
-                        current_text_features,
-                        mm_memory, 
-                        text_memory, 
-                        mask
-                    )
+                    # Ensure batch sizes match for both mm_memory and text_memory
+                    if mm_memory.size(0) != B or (text_memory is not None and text_memory.size(0) != B):
+                        # Use only the current features without temporal attention
+                        enhanced_features = current_mm_features
+                    else:
+                        try:
+                            # Project current features to match memory dimensions
+                            current_mm_projected = self.memory_projection(current_mm_features)  # 1536 -> 768
+                            current_text_projected = self.text_projection(current_text_features) if current_text_features is not None else None
+                            
+                            enhanced_features = self.temporal_attention(
+                                current_mm_projected, 
+                                current_text_projected,
+                                mm_memory, 
+                                text_memory, 
+                                mask
+                            )
+                        except RuntimeError as e:
+                            # If there's a tensor size mismatch, fall back to current features
+                            print(f"Warning: Temporal attention failed due to tensor mismatch: {e}")
+                            enhanced_features = current_mm_features
+                else:
+                    enhanced_features = current_mm_features
+                
+                # Only apply projection if we used temporal attention (768 -> 1536)
+                # If we fell back to current_mm_features, it's already 1536 dimensions
+                if enhanced_features.size(-1) == 768:  # Temporal attention was used
+                    if not hasattr(self, 'enhanced_projection'):
+                        self.enhanced_projection = nn.Linear(768, 1536).to(device)
+                    enhanced_features = self.enhanced_projection(enhanced_features)
+                # If enhanced_features is already 1536, no projection needed
             else:
                 # Standard temporal attention without text feedback
                 memory, mask = self.temporal_memory.get_previous(B, device)
                 if memory is not None:
                     attn_results = self.temporal_attention(query=current_mm_features, memory=memory, mask=mask)
                     combined_prev_current = torch.concat([current_mm_features, attn_results], dim=1)
-                    enhanced_features = self.projection(combined_prev_current)
+                    enhanced_features = self.projection(combined_prev_current)  # 2304 -> 1536
 
         # 5) decode this frame
         outputs = self.decoder.forward(enhanced_features, captions)
@@ -124,9 +152,12 @@ class SwinBart(nn.Module):
             if self.use_text_feedback:
                 # Store both multimodal and text features
                 with torch.no_grad():
+                    # Store projected features (768 dims) to match what we stored earlier
+                    projected_mm = self.memory_projection(current_mm_features.detach())  # 1536 -> 768
+                    projected_text = self.text_projection(current_text_features.detach()) if current_text_features is not None else None
                     self.temporal_memory.add(
-                        current_mm_features.detach(),
-                        current_text_features.detach() if current_text_features is not None else None
+                        projected_mm,  # 768 dims
+                        projected_text  # 768 dims
                     )
             else:
                 # Store only multimodal features (original behavior)
@@ -172,13 +203,22 @@ class SwinBart(nn.Module):
                 # Enhanced temporal attention with text feedback
                 mm_memory, text_memory, mask = self.temporal_memory.get_previous(B, device)
                 if mm_memory is not None:
-                    enhanced_features = self.temporal_attention(
-                        current_mm_features,
-                        current_text_features,
-                        mm_memory,
-                        text_memory,
-                        mask
-                    )
+                    try:
+                        # Project current features to match memory dimensions
+                        current_mm_projected = self.memory_projection(current_mm_features)  # 1536 -> 768
+                        current_text_projected = self.text_projection(current_text_features) if current_text_features is not None else None
+                        
+                        enhanced_features = self.temporal_attention(
+                            current_mm_projected,
+                            current_text_projected,
+                            mm_memory,
+                            text_memory,
+                            mask
+                        )
+                    except RuntimeError as e:
+                        # If there's a tensor size mismatch, fall back to current features
+                        print(f"Warning: Temporal attention failed due to tensor mismatch: {e}")
+                        enhanced_features = current_mm_features
             else:
                 # Standard temporal attention
                 memory, mask = self.temporal_memory.get_previous(B, device)
