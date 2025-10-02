@@ -2,7 +2,7 @@
 import lightning as pl
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
-from data.dataset import VideoCaptionDatasetCSV, VideoCaptionDataset
+from data.dataset import VideoCaptionDatasetCSV, VideoCaptionDataset, VideoSequentialSampler
 from data.split_utils import get_video_split, get_split_for_stage
 import os
 
@@ -88,6 +88,7 @@ class VideoDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         d = self.cfg.data
+        sampler = VideoSequentialSampler(self.train_dataset, d.batch_size)
         return DataLoader(
             self.train_dataset,
             batch_size=d.batch_size,
