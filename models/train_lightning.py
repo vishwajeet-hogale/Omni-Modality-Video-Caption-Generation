@@ -20,8 +20,8 @@ class TrainerModule(L.LightningModule):
         self.current_video_name = None
         self.last_batch_idx = -1
 
-    def forward(self, images, captions, audio, is_new_video=False):
-        return self.model(images, captions, audio, is_new_video=is_new_video)
+    def forward(self, images, captions, audio, is_new_video=False, previous_captions=None):
+        return self.model(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
 
     def training_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]
@@ -78,11 +78,17 @@ class TrainerModule(L.LightningModule):
             
         return loss
 
+    def on_validation_epoch_start(self):
+        """Initialize validation batch tracking."""
+        self._val_last_batch_idx = -1
+
     def validation_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]
         
         # Detect if this is a new video sequence for validation
-        is_new_video = (batch_idx == 0)  # For validation, reset at the start of each epoch
+        # Use the same logic as training - detect video boundaries by batch_idx discontinuity
+        is_new_video = (batch_idx == 0 or batch_idx != getattr(self, '_val_last_batch_idx', -1) + 1)
+        self._val_last_batch_idx = batch_idx
         
         # Log batch information
         batch_size = images.shape[0]
@@ -104,11 +110,21 @@ class TrainerModule(L.LightningModule):
             print(f"Val Batch {batch_idx}: size={batch_size}, images={image_shape}, audio={audio_shape}, captions={num_captions}")
             print(f"Memory: images={image_memory:.2f}MB, audio={audio_memory:.2f}MB, total={total_memory:.2f}MB")
             if is_new_video and getattr(self.model, 'use_temporal_attention', False):
-                print(f"  -> Validation started, temporal memory reset")
+                print(f"  -> New video sequence detected, temporal memory will be reset")
         
-        # Forward pass with new video indicator (vision + audio only)
-        outputs = self(images, captions, audio, is_new_video=is_new_video)
+        # Get previous captions for validation (use ground truth during validation too)
+        previous_captions = None
+        if hasattr(self, '_val_previous_captions') and not is_new_video:
+            previous_captions = self._val_previous_captions
+        
+        # Forward pass with new video indicator and previous captions
+        outputs = self(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
         loss = outputs.loss
+        
+        # Store current captions for next validation iteration
+        self._val_previous_captions = captions
+        if is_new_video:
+            self._val_previous_captions = None
 
         self.log("val/loss_step", loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         self.log("val/loss_epoch", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
@@ -160,9 +176,9 @@ class TrainerModule(L.LightningModule):
             print(f"  Expected val steps: {len(val_loader)}")
         
         # Reset temporal memory at epoch start
-        if getattr(self.model, 'use_temporal_attention', False):
-            self.model.reset_temporal_memory()
-            print(f"  🔄 Temporal memory reset for new epoch")
+        # if getattr(self.model, 'use_temporal_attention', False):
+        #     self.model.reset_temporal_memory()
+        #     print(f"  🔄 Temporal memory reset for new epoch")
         
         # Reset batch tracking
         self.last_batch_idx = -1
