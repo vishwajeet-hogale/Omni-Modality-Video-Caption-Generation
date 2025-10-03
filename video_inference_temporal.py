@@ -34,6 +34,12 @@ def _parse_frame_idx(filename: str):
         return int(m2[-1])
     return int(m.group(1))
 
+def detect_video_boundary(current_frame_idx, previous_frame_idx, threshold=10):
+    """Detect if we've moved to a new video sequence based on frame index gap"""
+    if previous_frame_idx is None:
+        return True  # First frame
+    return (current_frame_idx - previous_frame_idx) > threshold
+
 @hydra.main(config_path="configs", config_name="default")
 def main(cfg: DictConfig):
     device = torch.device(cfg.trainer.device if torch.cuda.is_available() else "cpu")
@@ -95,7 +101,7 @@ def main(cfg: DictConfig):
     previous_captions = []  # Store previous captions for the batch
     
     print(f"Processing in batches of {batch_size} to match training...")
-    
+    previous_frame_idx = None
     for batch_start in tqdm(range(0, len(image_paths), batch_size), desc="Processing batches"):
         batch_end = min(batch_start + batch_size, len(image_paths))
         batch_paths = image_paths[batch_start:batch_end]
@@ -116,7 +122,7 @@ def main(cfg: DictConfig):
                 audio_path = image_path.replace(f"{os.sep}frames{os.sep}", f"{os.sep}mfccs{os.sep}")
                 audio_path = os.path.splitext(audio_path)[0] + ".npy"
                 audio_tensor = load_mfcc(audio_path)
-                batch_audios.append(audio_tensor.squeeze(0))  # Remove batch dim for stacking
+                batch_audios.append(audio_tensor.squeeze(0))
                 
                 frame_name = os.path.basename(image_path)
                 frame_idx = _parse_frame_idx(frame_name)
@@ -133,81 +139,65 @@ def main(cfg: DictConfig):
         if not batch_images:
             continue
             
-        # Stack into batch tensors (like training)
-        images_batch = torch.stack(batch_images).to(device)  # [B, C, H, W]
-        audios_batch = torch.stack(batch_audios).to(device)  # [B, n_mfcc, T]
+        # Stack into batch tensors
+        images_batch = torch.stack(batch_images).to(device)
+        audios_batch = torch.stack(batch_audios).to(device)
         
-        # Process batch with temporal context (exactly like training)
+        # Detect video boundary
+        current_frame_idx = batch_info[0]['frame_idx'] if batch_info else 0
+        is_new_video = detect_video_boundary(current_frame_idx, previous_frame_idx)
+        
+        if is_new_video:
+            model.reset_temporal_memory()
+            print(f"🔄 New video sequence detected at frame {current_frame_idx}")
+        
+        # Process each frame in the batch
         with torch.no_grad():
-            # Determine if this is a new video (reset at start of first batch)
-            is_new_video = (batch_start == 0)
-            
-            # Reset temporal memory for new video
-            if is_new_video:
-                model.reset_temporal_memory()
-                
-            # Prepare previous captions for the batch (like training does)
-            batch_previous_captions = None
-            if len(previous_captions) > 0:
-                # Use the last few captions as context (matching training)
-                batch_previous_captions = previous_captions[-len(batch_images):]
-                # Pad if necessary
-                while len(batch_previous_captions) < len(batch_images):
-                    batch_previous_captions.insert(0, None)
-            
-            # Create dummy captions for forward pass (we'll replace with generated ones)
-            dummy_captions = [""] * len(batch_images)
-            
-            # Run forward pass to get features and update temporal memory
-            # This matches the training process exactly
-            outputs = model.forward(
-                images_batch,
-                dummy_captions,  # Will be ignored in generate mode
-                audios_batch,
-                is_new_video=is_new_video,
-                previous_captions=batch_previous_captions
-            )
-            
-            # Generate captions for each frame in the batch
             for i in range(len(batch_info)):
-                # Get single frame
-                current_image = images_batch[i:i+1]  # [1, C, H, W]
-                current_audio = audios_batch[i:i+1]  # [1, n_mfcc, T]
+                current_image = images_batch[i:i+1]
+                current_audio = audios_batch[i:i+1]
                 
                 # Use previous caption if available
-                prev_cap = batch_previous_captions[i] if batch_previous_captions and batch_previous_captions[i] else None
+                prev_cap = previous_captions[-1] if previous_captions else None
                 
-                # Generate caption
-                generated_ids = model.generate(
-                    images=current_image,
-                    audio=current_audio,
-                    max_length=cfg.inference.max_length,
-                    num_beams=cfg.inference.num_beams,
-                    previous_caption=prev_cap
-                )
-                
-                # Decode caption
-                caption = model.decoder.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
-                
-                # Store results
-                result_info = batch_info[i].copy()
-                result_info['caption'] = caption
-                result_info['previous_caption'] = prev_cap
-                results.append(result_info)
-                
-                # Add to previous captions list
-                previous_captions.append(caption)
-                
-                # Keep only last temporal_memory_length captions
-                if len(previous_captions) > cfg.temporal_memory_length:
-                    previous_captions.pop(0)
-                
-                frame_num = batch_start + i + 1
-                print(f"Frame {frame_num}/{len(image_paths)} ({result_info['frame_name']}): {caption}")
-                if prev_cap:
-                    print(f"  Previous: {prev_cap}")
-                print(f"  Batch {batch_start//batch_size + 1}, Frame {i+1}/{len(batch_info)}")
-                print("-" * 60)
+                try:
+                    generated_ids = model.generate(
+                        current_image,
+                        current_audio,
+                        max_length=cfg.inference.max_length,
+                        num_beams=cfg.inference.num_beams,
+                        is_new_video=is_new_video,
+                        previous_caption=prev_cap
+                    )
+                    
+                    # Decode caption
+                    caption = model.decoder.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+                    
+                    # Store results
+                    result_info = batch_info[i].copy()
+                    result_info['caption'] = caption
+                    result_info['previous_caption'] = prev_cap
+                    results.append(result_info)
+                    
+                    # Add to previous captions list
+                    previous_captions.append(caption)
+                    
+                    # Keep only last temporal_memory_length captions
+                    if len(previous_captions) > cfg.temporal_memory_length:
+                        previous_captions.pop(0)
+                    
+                    frame_num = batch_start + i + 1
+                    print(f"Frame {frame_num}/{len(image_paths)} ({result_info['frame_name']}): {caption}")
+                    if prev_cap:
+                        print(f"  Previous: {prev_cap}")
+                    print(f"  Batch {batch_start//batch_size + 1}, Frame {i+1}/{len(batch_info)}")
+                    print("-" * 60)
+                    
+                except Exception as e:
+                    print(f"Error generating caption for frame {i}: {e}")
+                    continue
+    
+        previous_frame_idx = current_frame_idx
     
     # Save results
     # Save as CSV for analysis
