@@ -20,8 +20,8 @@ class TrainerModule(L.LightningModule):
         self.current_video_name = None
         self.last_batch_idx = -1
 
-    def forward(self, images, captions, audio, is_new_video=False, previous_captions=None):
-        return self.model(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
+    def forward(self, images, captions, audio, is_new_video=False):
+        return self.model(images, captions, audio, is_new_video=is_new_video)
 
     def training_step(self, batch, batch_idx):
         images, captions, audio = batch["images"], batch["captions"], batch["audio"]
@@ -53,19 +53,9 @@ class TrainerModule(L.LightningModule):
             if is_new_video and getattr(self.model, 'use_temporal_attention', False):
                 print(f"  -> New video sequence detected, temporal memory will be reset")
         
-        # Get previous captions for text feedback (use ground truth during training)
-        previous_captions = None
-        if hasattr(self, '_previous_captions') and not is_new_video:
-            previous_captions = self._previous_captions
-        
-        # Forward pass with new video indicator and previous captions
-        outputs = self(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
+        # Forward pass with new video indicator (vision + audio only)
+        outputs = self(images, captions, audio, is_new_video=is_new_video)
         loss = outputs.loss
-        
-        # Store current captions for next iteration (use ground truth for stability)
-        self._previous_captions = captions
-        if is_new_video:
-            self._previous_captions = None
 
         self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         self.log("train/loss_epoch", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -116,19 +106,9 @@ class TrainerModule(L.LightningModule):
             if is_new_video and getattr(self.model, 'use_temporal_attention', False):
                 print(f"  -> Validation started, temporal memory reset")
         
-        # Get previous captions for validation (use ground truth during validation too)
-        previous_captions = None
-        if hasattr(self, '_val_previous_captions') and not is_new_video:
-            previous_captions = self._val_previous_captions
-        
-        # Forward pass with new video indicator and previous captions
-        outputs = self(images, captions, audio, is_new_video=is_new_video, previous_captions=previous_captions)
+        # Forward pass with new video indicator (vision + audio only)
+        outputs = self(images, captions, audio, is_new_video=is_new_video)
         loss = outputs.loss
-        
-        # Store current captions for next validation iteration
-        self._val_previous_captions = captions
-        if is_new_video:
-            self._val_previous_captions = None
 
         self.log("val/loss_step", loss, on_step=True, on_epoch=False, prog_bar=False, logger=True)
         self.log("val/loss_epoch", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
