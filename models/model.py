@@ -44,7 +44,7 @@ class SwinBart(nn.Module):
             )
         self.projection_outputs_to_temp = nn.Linear(50265, cfg.decoder_cfg.hidden_dim)
         self.projection = nn.Linear(2304, 1536)
-    def forward(self, images, captions, audio, is_new_video=False, previous_captions=None):
+    def forward(self, images, captions, audio, is_new_video=False):
         B, device = images.size(0), images.device
 
         # Reset temporal memory if starting a new video
@@ -82,7 +82,7 @@ class SwinBart(nn.Module):
                 self.temporal_memory.add(projected_features.detach())
 
         return outputs
-    def generate(self, images, audio, max_length=60, num_beams=4, is_new_video=False):
+    def generate(self, images, audio, max_length=60, num_beams=4, is_new_video=False, previous_caption=None):
         B, device = images.size(0), images.device
         
         # Reset temporal memory if starting a new video
