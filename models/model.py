@@ -14,7 +14,9 @@ class SwinBart(nn.Module):
         self.encoder = VisionEncoder(
             encoder_name=cfg.vision_encoder_cfg.encoder,
             output_dim=cfg.vision_encoder_cfg.output_dim,
-            projection_dim=cfg.decoder_cfg.hidden_dim
+            projection_dim=cfg.decoder_cfg.hidden_dim,
+            use_lora=cfg.vision_encoder_cfg.lora,
+            lora_r=getattr(cfg.vision_encoder_cfg, 'lora_r', 8)
         )
 
         # Init decoder

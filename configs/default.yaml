@@ -4,9 +4,10 @@ defaults:
 vision_encoder_cfg:
   encoder: swin_base_patch4_window7_224
   lora: false
+  lora_r: 8 # LoRA rank parameter
   input_dim: 768 # ViT's patch embedding size
   output_dim: 1000
-  freeze: true  # Frozen to save compute
+  freeze: true # Frozen to save compute
 audio_encoder_cfg:
   encoder: transformer_cls
   lora: false
@@ -27,40 +28,43 @@ decoder_cfg:
   freeze: false
 
 trainer:
-  precision: 16  # Use half precision to save memory
-  accelerator: cuda
+  precision: 32 # Use full precision to avoid MPS issues
+  accelerator: cpu # Force CPU to avoid MPS device issues
   devices: 1
-  batch_size: 32  # Reduced batch size for limited compute
-  lr: 3e-5  # Reduced learning rate for frozen encoder
-  device: cuda
+  batch_size: 32 # Reduced batch size for limited compute
+  lr: 3e-5 # Reduced learning rate for frozen encoder
+  device: cpu # Force CPU device
   epochs: 30
-  output_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints
-  max_seq_length: 64  # Shorter sequences to save memory
+  output_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints
+  max_seq_length: 64 # Shorter sequences to save memory
   mlm_probability: 0.15
-  save_steps: 250  # More frequent saves
-  logging_steps: 50  # More frequent logging
+  save_steps: 250 # More frequent saves
+  logging_steps: 50 # More frequent logging
   log_every_n_steps: 2
   exp_name: SwinBartAudio_FrozenVision
   # Enhanced training settings for frozen vision encoder
-  weight_decay: 1e-5  # Small weight decay
-  warmup_steps: 1000  # Reduced warmup
+  weight_decay: 1e-5 # Small weight decay
+  warmup_steps: 1000 # Reduced warmup
   lr_scheduler: cosine
-  gradient_clip_val: 0.5  # Smaller gradient clipping
+  gradient_clip_val: 0.5 # Smaller gradient clipping
   min_lr: 1e-6
 
 # Temporal attention configuration
 use_temporal_attention: true # Set to true to enable temporal attention
-use_text_feedback: false     # No text input - vision+audio only
+use_text_feedback: false # No text input - vision+audio only
 temporal_attention_heads: 8
 temporal_attention_dropout: 0.1
 temporal_memory_length: 15
+
+# Multimodal diffusion configuration
+use_multimodal_diffusion: false # Set to true to enable multimodal diffusion
 model:
-  temporal_window_size: 15              # How many frames to process together
-  max_caption_context: 15               # How many previous captions to remember
+  temporal_window_size: 15 # How many frames to process together
+  max_caption_context: 15 # How many previous captions to remember
 data:
-  captions_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/captions_csv
-  frames_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames
-  audio_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/mfccs
+  captions_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/captions_csv
+  frames_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames
+  audio_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/mfccs
   batch_size: 32
   num_workers: 0
   pin_memory: false
@@ -82,8 +86,8 @@ inference:
   temperature: 0.6
   image_size: 224
   num_beams: 2
-  image_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
-  model_path: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints/best_model.pth
-  video_image_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/frames/Nasogastric tube insertion_clip_0.0s_to_175.0s
-  checkpoint_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/checkpoints
-  inf_save_dir: /home/hov1syv/Desktop/Personal/research/video-commentary-ai/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
+  image_path: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s/frame_0001.jpg
+  model_path: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints/best_model.pth
+  video_image_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/frames/Nasogastric tube insertion_clip_0.0s_to_175.0s
+  checkpoint_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/checkpoints
+  inf_save_dir: /Users/rohitkulkarni/Desktop/Omni-Modality-Video-Caption-Generation/video_inference_transformer_cls/How To Insert A Nasogastric Tube » NG Tube » Nursing Skills_clip_40.0s_to_183.0s
