@@ -3,6 +3,24 @@ import timm
 import torch
 from peft import get_peft_model, LoraConfig, TaskType
 
+class SwinWrapper(nn.Module):
+    """Wrapper for SwinTransformer to make it compatible with PEFT"""
+    def __init__(self, swin_model):
+        super().__init__()
+        self.swin = swin_model
+
+    def forward(self, input_ids=None, pixel_values=None, **kwargs):
+        # PEFT expects input_ids, but we ignore it and use pixel_values for Swin
+        if pixel_values is not None:
+            return self.swin(pixel_values)
+        else:
+            # Fallback: if no pixel_values, assume first argument is images
+            args = list(kwargs.values()) if kwargs else []
+            if args:
+                return self.swin(args[0])
+            else:
+                raise ValueError("No valid input found for SwinTransformer")
+
 class VisionEncoder(nn.Module):
     def __init__(self, encoder_name: str, output_dim: int, projection_dim: int, use_lora: bool = False, lora_r: int = 8):
         super().__init__()
@@ -33,9 +51,11 @@ class VisionEncoder(nn.Module):
                 task_type=TaskType.FEATURE_EXTRACTION
             )
             
-            # Apply LoRA to the vision model
+            # Apply LoRA to the vision model using wrapper
             try:
-                self.vision_model = get_peft_model(self.vision_model, lora_config)
+                # Wrap SwinTransformer to make it PEFT-compatible
+                wrapped_model = SwinWrapper(self.vision_model)
+                self.vision_model = get_peft_model(wrapped_model, lora_config)
                 print(f"✅ LoRA applied to SwinTransformer with {lora_r} rank")
                 
                 # Print LoRA model info
@@ -60,8 +80,8 @@ class VisionEncoder(nn.Module):
 
     def forward(self, images):
         if self.use_lora:
-            # LoRA model - allow gradients
-            features = self.vision_model(images)
+            # LoRA model - pass images as pixel_values to satisfy PEFT signature
+            features = self.vision_model(pixel_values=images)
         else:
             # Use no_grad for frozen vision model to save memory and compute
             with torch.no_grad():
