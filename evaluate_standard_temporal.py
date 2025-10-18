@@ -16,8 +16,8 @@ import json
 from datetime import datetime
 
 from models.model import SwinBart
+from models.train_lightning import TrainerModule
 from data.datamodule import VideoDataModule
-from train_multimodal_diffusion import MultimodalDiffusionTrainer
 
 class StandardTemporalEvaluator:
     """Evaluator for industry-standard temporal window sizes"""
@@ -86,7 +86,7 @@ class StandardTemporalEvaluator:
         data_module = VideoDataModule(cfg)
         
         # Initialize model
-        model = MultimodalDiffusionTrainer(cfg)
+        model = TrainerModule(cfg)
         
         # Set up trainer for evaluation with LoRA-aware checkpointing
         logger = TensorBoardLogger(
