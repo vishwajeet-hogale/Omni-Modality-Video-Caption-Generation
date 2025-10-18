@@ -12,17 +12,22 @@ class VisionEncoder(nn.Module):
         if use_lora:
             print(f"🚀 Enabling LoRA for SwinTransformer with r={lora_r}")
             
-            # Debug: Print available modules
-            print("🔍 Available modules in SwinTransformer:")
+            # First, let's see what modules are available
+            print("🔍 Scanning SwinTransformer modules...")
+            linear_modules = []
             for name, module in self.vision_model.named_modules():
                 if isinstance(module, torch.nn.Linear):
-                    print(f"  - {name}")
+                    linear_modules.append(name)
             
-            # Configure LoRA for SwinTransformer - use correct module names
+            print(f"📋 Found {len(linear_modules)} Linear modules")
+            if len(linear_modules) > 0:
+                print(f"📋 First few modules: {linear_modules[:5]}")
+            
+            # Use a more conservative LoRA configuration
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=16,
-                target_modules=["qkv", "proj", "mlp.fc1", "mlp.fc2"],  # SwinTransformer specific modules
+                target_modules=linear_modules[:10] if len(linear_modules) > 10 else linear_modules,  # Use actual module names
                 lora_dropout=0.1,
                 bias="none",
                 task_type=TaskType.FEATURE_EXTRACTION
@@ -32,6 +37,12 @@ class VisionEncoder(nn.Module):
             try:
                 self.vision_model = get_peft_model(self.vision_model, lora_config)
                 print(f"✅ LoRA applied to SwinTransformer with {lora_r} rank")
+                
+                # Print LoRA model info
+                trainable_params = sum(p.numel() for p in self.vision_model.parameters() if p.requires_grad)
+                total_params = sum(p.numel() for p in self.vision_model.parameters())
+                print(f"📊 LoRA Model: {trainable_params:,} trainable / {total_params:,} total parameters")
+                
             except Exception as e:
                 print(f"❌ LoRA application failed: {e}")
                 print(f"🔄 Falling back to frozen SwinTransformer")
@@ -39,11 +50,6 @@ class VisionEncoder(nn.Module):
                 for param in self.vision_model.parameters():
                     param.requires_grad = False
                 self.vision_model.eval()
-            
-            # Print LoRA model info for debugging
-            trainable_params = sum(p.numel() for p in self.vision_model.parameters() if p.requires_grad)
-            total_params = sum(p.numel() for p in self.vision_model.parameters())
-            print(f"📊 LoRA Model: {trainable_params:,} trainable / {total_params:,} total parameters")
         else:
             # Freeze the vision model to save compute
             for param in self.vision_model.parameters():
@@ -54,14 +60,8 @@ class VisionEncoder(nn.Module):
 
     def forward(self, images):
         if self.use_lora:
-            # LoRA model can have gradients, so no no_grad
-            try:
-                features = self.vision_model(images)
-            except Exception as e:
-                print(f"❌ LoRA forward pass failed: {e}")
-                print(f"🔄 Trying with no_grad...")
-                with torch.no_grad():
-                    features = self.vision_model(images)
+            # LoRA model - allow gradients
+            features = self.vision_model(images)
         else:
             # Use no_grad for frozen vision model to save memory and compute
             with torch.no_grad():
