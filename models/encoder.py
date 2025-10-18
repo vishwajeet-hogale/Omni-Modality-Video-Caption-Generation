@@ -11,11 +11,18 @@ class VisionEncoder(nn.Module):
         
         if use_lora:
             print(f"🚀 Enabling LoRA for SwinTransformer with r={lora_r}")
-            # Configure LoRA for SwinTransformer - use generic patterns
+            
+            # Debug: Print available modules
+            print("🔍 Available modules in SwinTransformer:")
+            for name, module in self.vision_model.named_modules():
+                if isinstance(module, torch.nn.Linear):
+                    print(f"  - {name}")
+            
+            # Configure LoRA for SwinTransformer - use correct module names
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=16,
-                target_modules=["Linear"],  # Target all Linear layers
+                target_modules=["qkv", "proj", "mlp.fc1", "mlp.fc2"],  # SwinTransformer specific modules
                 lora_dropout=0.1,
                 bias="none",
                 task_type=TaskType.FEATURE_EXTRACTION
