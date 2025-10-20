@@ -1,0 +1,237 @@
+PROJECT IMPLEMENTATION SUMMARY
+
+WHAT WE'VE BUILT SO FAR
+
+We've created a complete multimodal video commentary system specifically designed for medical instructional videos, particularly nasogastric tube insertion procedures. The system takes raw video input and generates detailed, temporally coherent captions by combining visual frames, audio features, and language generation.
+
+DATASETS AND DATA PROCESSING
+
+We implemented two main dataset classes to handle different data formats:
+
+VideoCaptionDatasetCSV is our primary dataset that works with CSV files. It loads images from frames/<video>/frame_XXXX.jpg, audio features from mfccs/<video>/frame_XXXX.npy, and captions from captions_csv/<video>.csv. Important part is how it tracks video boundaries using (start_idx, end_idx, video_name) tuples to make sure we don't mix frames from different medical procedures during training.
+
+VideoCaptionDataset is our legacy dataset that still works with JSON files for backward compatibility, mapping frame_id to caption.
+
+We also built VideoSequentialSampler, a custom PyTorch sampler that ensures frames from the same video are processed together in the correct temporal order. This prevents the model from learning spurious correlations between unrelated video segments.
+
+For data preprocessing, we created a robust pipeline in preprocess.py that:
+- Extracts frames at 1 FPS using OpenCV
+- Extracts audio using FFmpeg at 44.1kHz sample rate
+- Computes 13-dimensional MFCC features using Librosa with specific parameters (1024-point FFT, 256-sample hop length, 40 mel filter banks)
+- Aligns audio segments to match the number of extracted frames by dividing the entire audio track into equal segments
+
+LORA AND PARAMETER-EFFICIENT FINE-TUNING
+
+We implemented LoRA (Low-Rank Adaptation) across multiple components:
+
+For the Vision Encoder, we added LoRA support to the Swin Transformer (swin_base_patch4_window7_224) with r=8 rank, lora_alpha=16, targeting ["qkv", "proj"] modules, with 0.1 dropout. This allows us to fine-tune the vision encoder efficiently without updating all parameters.
+
+For the Decoder, we enabled LoRA on the BART model (facebook/bart-base) for parameter-efficient language generation.
+
+For the Audio Encoder, we kept it without LoRA but made it configurable with multiple backbone options including transformer_cls, conv1d, gru_last, attention_pool, and others.
+
+We added peft>=0.4.0 to our requirements and integrated it throughout the system.
+
+MODEL ARCHITECTURES
+
+Our core model is SwinBart, which combines:
+- Swin Transformer vision encoder (1000-dimensional output)
+- Transformer audio encoder (768-dimensional output) 
+- BART language decoder
+- Concatenation fusion with L2 normalization
+
+DETAILED SWINBART ARCHITECTURE:
+
+Vision Encoder (Swin Transformer):
+- Model: swin_base_patch4_window7_224 from timm
+- Input: RGB images (batch_size, 3, 224, 224)
+- Patch size: 4x4 with window size 7x7
+- Output dimension: 1000 (configurable via output_dim)
+- Projection layer: nn.Linear(1000, 768) to match decoder hidden size
+- LoRA integration: r=8 rank, lora_alpha=16, target_modules=["qkv", "proj"], dropout=0.1
+- Wrapper class: SwinWrapper for PEFT compatibility
+
+Audio Encoder (Multiple Backbone Options):
+- Primary: TransformerCLSBackbone with 13 MFCC coefficients
+- Input shape: (batch_size, 13, T_max) with variable temporal length
+- Output dimension: 768 (matches decoder hidden size)
+- Alternative backbones: Conv1dBackbone, GRUBackbone, AttentionPoolBackbone, CNN2DBackbone
+- Conv1dBackbone: 1D convolutions with configurable hidden_size, num_layers, kernel_size
+- GRUBackbone: Bidirectional GRU with hidden_size=256, num_layers=1, dropout=0.0
+- CNN2DBackbone: 2D CNN treating MFCC as single-channel image with channels=(32,64,128)
+
+Temporal Attention System:
+- TemporalAttention class: Multi-head attention with 8 heads, head_dim=96 (768/8)
+- Input dimension: 1536 (fused vision+audio features)
+- Hidden dimension: 768 (matches decoder)
+- Query projection: nn.Linear(1536, 768)
+- Key/Value projections: nn.Linear(768, 768) each
+- Output projection: nn.Linear(768, 768)
+- Dropout: 0.1 for attention weights
+- TemporalMemory: Circular buffer with max_len=15 frames
+- Memory operations: add(), get_previous(), clear() with batch size handling
+
+BART Decoder:
+- Model: facebook/bart-base (12 layers, 12 attention heads, 768 hidden size)
+- Input projection: nn.Linear(1536, 768) for multimodal features
+- Teacher forcing: decoder_input_ids excludes last token, labels exclude first token
+- Generation: Beam search with configurable num_beams, max_length=60
+- Tokenizer: BartTokenizer with BOS/EOS/PAD token handling
+
+Fusion Architecture:
+- Concatenation: vision (1000) + audio (768) = 1768 dimensions
+- L2 normalization: F.normalize(fused_features, dim=1)
+- Temporal projection: nn.Linear(2304, 1536) for temporal attention output
+- Final projection: nn.Linear(1536, 768) for decoder input
+
+ENHANCED MULTIMODAL VIT ARCHITECTURE:
+
+ViTEncoder:
+- Patch embedding: nn.Conv2d(3, hidden_dim, kernel_size=16, stride=16)
+- Positional encoding: nn.Parameter(1, 1000, hidden_dim)
+- Transformer layers: nn.ModuleList with nn.TransformerEncoderLayer
+- Configurable: hidden_dim, num_heads, num_layers
+
+CrossModalAttention:
+- Query, key, value projections to hidden_dim
+- Multi-head attention with configurable num_heads
+- Cross-modal interaction between image and audio features
+
+EnhancedMultiModalViT:
+- Image encoder: ViTEncoder with patch embedding and transformer layers
+- Audio encoder: AudioTokenizer for MFCC processing
+- Text encoder: TextTokenizer for text processing
+- Cross-modal attention: Bidirectional attention between modalities
+- Temporal attention: nn.MultiheadAttention for video sequences
+- Fusion layers: nn.ModuleList with nn.TransformerEncoderLayer
+- Output projection: nn.Linear(hidden_dim, output_dim)
+
+MASKED LANGUAGE MODEL ARCHITECTURE:
+
+Token Processing:
+- Token embedding: nn.Embedding(vocab_size, hidden_dim)
+- Position embedding: nn.Embedding(max_length, hidden_dim)
+- Image encoder: nn.Linear(hidden_dim, hidden_dim) for image features
+
+Decoder Architecture:
+- Transformer decoder: nn.TransformerDecoder with 6 layers
+- Decoder layer: nn.TransformerDecoderLayer with 8 attention heads
+- Output projection: nn.Linear(hidden_dim, vocab_size)
+
+Training Configuration:
+- Mask probability: config.mask_prob for MLM training
+- Max sequence length: config.max_length for positional encoding
+- Vocabulary size: config.vocab_size for token embedding
+
+DIFFUSION TEXT GENERATOR:
+
+The DiffusionTextGenerator implements alternative generation approaches with:
+- Diffusion-based text generation for non-autoregressive output
+- Configurable diffusion parameters for generation quality
+- Integration with multimodal features for conditioned generation
+
+AUDIO ENCODER BACKBONE DETAILS:
+
+Conv1dBackbone:
+- 1D convolutions with configurable hidden_size, num_layers, kernel_size
+- ReLU activations and dropout for regularization
+- Adaptive pooling for variable-length sequences
+
+GRUBackbone:
+- Bidirectional GRU with hidden_size=256, num_layers=1
+- Configurable dropout and bidirectional processing
+- Output: 2*hidden_size if bidirectional, hidden_size otherwise
+
+AttentionPoolBackbone:
+- Self-attention pooling over temporal dimension
+- Configurable attention hidden dimensions
+- Adaptive pooling for sequence summarization
+
+CNN2DBackbone:
+- 2D CNN treating MFCC as single-channel image
+- Channels: (32, 64, 128) with kernel_size=3
+- Adaptive average pooling to (1,1) for fixed output size
+
+FlattenAdaptiveBackbone:
+- Adaptive pooling to target_len
+- Flatten operation for fixed-size output
+- Handles variable-length sequences efficiently
+
+TRAINING AND EVALUATION SCRIPTS
+
+We created multiple training entry points:
+- main.py: Our primary Hydra-based training script with Lightning integration
+- train_multimodal_diffusion.py: Alternative diffusion-based training approach
+- models/train_lightning.py: Our main TrainerModule with training, validation, and test steps
+
+For evaluation, we built several scripts:
+- evaluate_temporal_windows.py: Tests 42 different configurations across temporal window sizes [5, 10, 15, 20, 25] and caption contexts [5, 10, 15]
+- evaluate_standard_temporal.py: Uses industry-standard temporal windows [3, 5, 8, 16, 32, 64, 128] frames
+- run_temporal_evaluation.py: A wrapper script with progress monitoring and error handling
+- hyper_parameter_tune.py: Optuna-based hyperparameter optimization
+
+INFERENCE CAPABILITIES
+
+We implemented multiple inference approaches for different use cases:
+- video_inference_baseline_frame_by_frame.py: Per-frame generation without temporal memory
+- video_inference_temporal.py: Temporal decoding that maintains memory across frames
+- video_inference_training_style.py: Training-style inference with result analysis
+- video_inference_advanced.py: Advanced inference with batch processing capabilities
+- inference_multimodal_diffusion.py: Diffusion-based inference for alternative generation
+- inference.py: Standard inference with configurable parameters
+
+CONFIGURATION AND DEPENDENCIES
+
+We centralized all configuration in configs/default.yaml with detailed settings for:
+- Vision Encoder: swin_base_patch4_window7_224 with LoRA (r=8), output_dim=1000
+- Audio Encoder: transformer_cls with 13 MFCC coefficients, 768-dimensional projection
+- Decoder: facebook/bart-base with LoRA enabled, 768 hidden dimensions
+- Training: CPU-focused setup (precision 32, devices 1), batch_size=32, lr=3e-5, 30 epochs
+- Temporal Attention: 8 heads, 0.1 dropout, 15-frame memory length
+- Data paths: Absolute paths to captions_csv/, frames/, mfccs/ directories
+
+Our requirements.txt includes: torch>=2.0.0, torchvision>=0.15.0, lightning>=2.0.0, transformers>=4.30.0, timm>=0.9.0, hydra-core>=1.3.0, omegaconf>=2.3.0, tensorboard>=2.13.0, peft>=0.4.0, datasets>=2.12.0, accelerate>=0.20.0
+
+TRAINING FRAMEWORK
+
+We built a PyTorch Lightning-based training system with:
+- TrainerModule that wraps our SwinBart model with training_step, validation_step, test_step methods
+- Dynamic padding for variable-length MFCC sequences while stacking images
+- Video boundary detection using batch index continuity to reset temporal memory
+- TensorBoard integration with image grids, MFCC visualizations, attention heatmaps, and loss curves
+- Best model checkpointing with checkpoints/best_model.pth and archival naming
+- AdamW optimization with lr=3e-5, weight_decay=1e-5, gradient_clip_val=0.5, and cosine learning rate scheduling
+
+DATA MODULE
+
+We created VideoDataModule as a Lightning data module that handles train/val/test splits while preserving video boundaries to prevent temporal leakage. It supports both CSV and JSON caption formats and includes a collation function for multimodal batch processing.
+
+EVALUATION FRAMEWORK
+
+Our evaluation system includes:
+- Systematic testing across 42 different temporal configurations
+- Industry-standard temporal windows with time span annotations
+- Automated result collection with JSON serialization and error handling
+- Performance metrics including loss tracking, memory usage, and training time comparisons
+- Result visualization with automated saving to outputs/ directory
+
+INFERENCE FRAMEWORK
+
+We built a flexible inference system with:
+- Configurable generation parameters: max_length=60, num_beams=2, top_k=5, top_p=0.95, temperature=0.6
+- Batch processing capabilities with parallel inference
+- Graceful error handling for missing audio/visual components
+- Video-specific output directories with result saving
+- CPU-optimized inference with proper device placement
+
+
+CURRENT STATUS
+
+We have a fully functional multimodal video commentary system that includes:
+- Complete preprocessing pipeline with audio-visual synchronization
+- Sophisticated dataset architecture with temporal boundary preservation
+- Advanced model architecture with temporal attention mechanisms
+- Training framework with distributed training support
+- Multiple evaluation and inference utilities
+- Extensive configuration management and experimental frameworks
+- Production-ready checkpointing and deployment capabilities
